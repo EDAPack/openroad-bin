@@ -1,0 +1,103 @@
+name: CI
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+    version-check:
+        runs-on: 'ubuntu-latest'
+        outputs:
+            openroad_version: ${{ steps.check.outputs.openroad_version }}
+            rls_version: ${{ steps.check.outputs.rls_version }}
+        steps:
+        - name: fetch-version
+          id: check
+          run: |
+            # Get the latest OpenROAD release tag
+            openroad_version=$(curl -s -L \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                https://api.github.com/repos/The-OpenROAD-Project/OpenROAD/releases/latest | \
+                jq -r ".tag_name")
+            
+            echo "openroad_version: ${openroad_version}"
+            echo "openroad_version=${openroad_version}" >> ${GITHUB_OUTPUT}
+
+            # Create release version with build number
+            rls_version="${openroad_version}.${{ github.run_id }}"
+            echo "rls_version=${rls_version}" >> ${GITHUB_OUTPUT}
+
+            cat ${GITHUB_OUTPUT}
+
+    build-linux-x86_64:
+        runs-on: 'ubuntu-latest'
+        needs: version-check
+        strategy:
+          matrix:
+            image: [manylinux2014_x86_64]
+        steps:
+            - uses: actions/checkout@v4
+            - name: print
+              run: |
+                echo "image: ${{ matrix.image }}"
+                echo "openroad_version: ${{ needs.version-check.outputs.openroad_version }}"
+                echo "rls_version: ${{ needs.version-check.outputs.rls_version }}"
+            - name: build
+              env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                BUILD_NUM: ${{ github.run_id }}
+                image: ${{ matrix.image }}
+                openroad_version: ${{ needs.version-check.outputs.openroad_version }}
+              run: >
+                docker run --rm
+                --volume "$(pwd):/io"
+                --env BUILD_NUM
+                --env openroad_version
+                --env image
+                --workdir /io
+                quay.io/pypa/${{ matrix.image }}
+                /io/scripts/build.sh
+            - name: upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                name: "openroad-${{ matrix.image }}"
+                path: "release/openroad-${{ matrix.image }}-*.tar.gz"
+                if-no-files-found: error
+                retention-days: 7
+
+    publish:
+        runs-on: 'ubuntu-latest'
+        needs: 
+        - build-linux-x86_64
+        - version-check
+        permissions:
+            contents: write
+        steps:
+        - name: Create Release
+          id: create_release
+          uses: actions/create-release@v1
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          with:
+            tag_name: "${{ needs.version-check.outputs.rls_version }}"
+            release_name: "Release ${{ needs.version-check.outputs.rls_version }}"
+            body: |
+              Build of OpenROAD
+              Version: ${{ needs.version-check.outputs.rls_version }}
+            draft: false
+            prerelease: true
+        - name: Download build artifacts
+          uses: actions/download-artifact@v4
+          with:
+            pattern: "openroad-*"
+            path: release
+            merge-multiple: true
+
+        - name: Upload assets to release
+          uses: softprops/action-gh-release@v2
+          with:
+            tag_name: "${{ needs.version-check.outputs.rls_version }}"
+            files: |
+              release/**/*.tar.gz
+            fail_on_unmatched_files: true
