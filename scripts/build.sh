@@ -79,6 +79,20 @@ if ! test -f ${INSTALL_PREFIX}/bin/cmake; then
 fi
 export PATH=${INSTALL_PREFIX}/bin:$PATH
 
+# Build newer Bison (required by SWIG 4.2+)
+BISON_VERSION="3.8.2"
+if ! test -f ${INSTALL_PREFIX}/bin/bison; then
+    echo "=== Building Bison ${BISON_VERSION} ==="
+    wget https://ftp.gnu.org/gnu/bison/bison-${BISON_VERSION}.tar.gz
+    tar xzf bison-${BISON_VERSION}.tar.gz
+    cd bison-${BISON_VERSION}
+    ./configure --prefix=${INSTALL_PREFIX}
+    make -j${NPROC}
+    make install
+    cd ${BUILD_DIR}
+fi
+export PATH=${INSTALL_PREFIX}/bin:$PATH
+
 # Build Boost
 BOOST_VERSION="1.85.0"
 BOOST_VERSION_UNDERSCORE=${BOOST_VERSION//./_}
