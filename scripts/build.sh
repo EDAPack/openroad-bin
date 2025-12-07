@@ -9,19 +9,34 @@ NPROC=$(nproc)
 #* Install required packages
 #********************************************************************
 if test $(uname -s) = "Linux"; then
-    yum update -y
-    yum install -y epel-release
-    yum install -y glibc-static wget flex bison jq \
-        cmake3 autoconf automake libtool make gcc gcc-c++ git \
-        zlib-devel tcl tcl-devel tk tk-devel \
-        libffi-devel readline-devel \
-        python3 python3-devel python3-pip \
-        pcre-devel pcre2-devel \
-        openssl-devel
+    # Detect if we're on RHEL 7 (manylinux2014) or RHEL 8+ (manylinux_2_28+)
+    if test -f /etc/centos-release && grep -q "CentOS Linux release 7" /etc/centos-release; then
+        # manylinux2014 / CentOS 7
+        yum update -y
+        yum install -y epel-release
+        yum install -y glibc-static wget flex bison jq \
+            cmake3 autoconf automake libtool make gcc gcc-c++ git \
+            zlib-devel tcl tcl-devel tk tk-devel \
+            libffi-devel readline-devel \
+            python3 python3-devel python3-pip \
+            pcre-devel pcre2-devel \
+            openssl-devel
 
-    # Create cmake symlink if cmake3 exists
-    if test -f /usr/bin/cmake3 && test ! -f /usr/bin/cmake; then
-        ln -s /usr/bin/cmake3 /usr/bin/cmake
+        # Create cmake symlink if cmake3 exists
+        if test -f /usr/bin/cmake3 && test ! -f /usr/bin/cmake; then
+            ln -s /usr/bin/cmake3 /usr/bin/cmake
+        fi
+    else
+        # manylinux_2_28+ / AlmaLinux 8+
+        dnf update -y
+        dnf install -y epel-release
+        dnf install -y glibc-static wget flex bison jq \
+            cmake autoconf automake libtool make gcc gcc-c++ git \
+            zlib-devel tcl tcl-devel tk tk-devel \
+            libffi-devel readline-devel \
+            python3 python3-devel python3-pip \
+            pcre-devel pcre2-devel \
+            openssl-devel qt5-qtbase-devel
     fi
 
     if test -z $image; then
