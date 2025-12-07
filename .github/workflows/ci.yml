@@ -85,24 +85,15 @@ jobs:
             echo "rls_version=${rls_version}" >> ${GITHUB_OUTPUT}
             echo "Release version: ${rls_version}"
 
-        - name: Create Release
-          id: create_release
-          uses: actions/create-release@v1
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          with:
-            tag_name: "${{ steps.get_version.outputs.rls_version }}"
-            release_name: "Release ${{ steps.get_version.outputs.rls_version }}"
-            body: |
-              Build of OpenROAD
-              Version: ${{ steps.get_version.outputs.rls_version }}
-            draft: false
-            prerelease: true
-
-        - name: Upload assets to release
+        - name: Create Release and Upload Assets
           uses: softprops/action-gh-release@v2
           with:
             tag_name: "${{ steps.get_version.outputs.rls_version }}"
+            name: "Release ${{ steps.get_version.outputs.rls_version }}"
+            body: |
+              Build of OpenROAD
+              Version: ${{ steps.get_version.outputs.rls_version }}
+            prerelease: true
             files: |
               release/**/*.tar.gz
             fail_on_unmatched_files: true
