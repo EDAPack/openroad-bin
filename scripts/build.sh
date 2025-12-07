@@ -34,6 +34,19 @@ INSTALL_PREFIX=${root}/release/openroad
 mkdir -p ${INSTALL_PREFIX}
 
 #********************************************************************
+#* Build and install Tcl from source FIRST
+#********************************************************************
+echo "=== Building Tcl from source ==="
+cd ${root}
+TCL_VERSION=8.6.16
+curl -L -o tcl${TCL_VERSION}-src.tar.gz "https://prdownloads.sourceforge.net/tcl/tcl${TCL_VERSION}-src.tar.gz"
+tar xzf tcl${TCL_VERSION}-src.tar.gz
+cd tcl${TCL_VERSION}/unix
+./configure --prefix=${INSTALL_PREFIX} --enable-shared
+make -j${NPROC}
+make install
+
+#********************************************************************
 #* Clone OpenROAD
 #********************************************************************
 cd ${root}
@@ -51,25 +64,10 @@ echo "=== Installing common dependencies ==="
 ./etc/DependencyInstaller.sh -common -prefix=${INSTALL_PREFIX}
 
 #********************************************************************
-#* Build and install Tcl from source
-#********************************************************************
-echo "=== Building Tcl from source ==="
-cd ${root}
-TCL_VERSION=8.6.16
-curl -L -o tcl${TCL_VERSION}-src.tar.gz "https://prdownloads.sourceforge.net/tcl/tcl${TCL_VERSION}-src.tar.gz"
-tar xzf tcl${TCL_VERSION}-src.tar.gz
-cd tcl${TCL_VERSION}/unix
-./configure --prefix=${INSTALL_PREFIX} --enable-shared
-make -j${NPROC}
-make install
-
-cd ${root}/OpenROAD
-
-#********************************************************************
 #* Build OpenROAD
 #********************************************************************
 echo "=== Building OpenROAD ==="
-./etc/Build.sh -cmake="-DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}"
+./etc/Build.sh -cmake="-DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DCMAKE_PREFIX_PATH=${INSTALL_PREFIX} -DTCL_LIBRARY=${INSTALL_PREFIX}/lib/libtcl8.6.so -DTCL_INCLUDE_PATH=${INSTALL_PREFIX}/include"
 
 echo "=== Installing OpenROAD ==="
 cd build
