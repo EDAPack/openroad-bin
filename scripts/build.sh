@@ -9,8 +9,20 @@ NPROC=$(nproc)
 #* Install required packages
 #********************************************************************
 if test $(uname -s) = "Linux"; then
-    # Detect if we're on RHEL 7 (manylinux2014) or RHEL 8+ (manylinux_2_28+)
-    if test -f /etc/centos-release && grep -q "CentOS Linux release 7" /etc/centos-release; then
+    if test -f /etc/lsb-release && grep -q "Ubuntu" /etc/lsb-release; then
+        # Ubuntu
+        apt-get update -y
+        apt-get install -y build-essential cmake git wget flex bison \
+            libffi-dev libreadline-dev \
+            tcl tcl-dev tk tk-dev \
+            python3 python3-dev python3-pip \
+            libpcre3-dev libpcre2-dev \
+            libssl-dev zlib1g-dev \
+            autoconf automake libtool \
+            swig \
+            libqt5charts5-dev qtbase5-dev \
+            pkg-config
+    elif test -f /etc/centos-release && grep -q "CentOS Linux release 7" /etc/centos-release; then
         # manylinux2014 / CentOS 7
         yum update -y
         yum install -y epel-release
@@ -42,8 +54,6 @@ if test $(uname -s) = "Linux"; then
     if test -z $image; then
         image=linux
     fi
-    
-    export PATH=/opt/python/cp312-cp312/bin:$PATH
     
     rls_plat=${image}
 fi
@@ -213,9 +223,7 @@ cd build
 cmake .. \
     -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
     -DCMAKE_BUILD_TYPE=Release \
-    -DTCL_LIBRARY=/usr/lib64/libtcl.so \
-    -DCMAKE_PREFIX_PATH="${INSTALL_PREFIX}" \
-    -DPython3_EXECUTABLE=/usr/bin/python3
+    -DCMAKE_PREFIX_PATH="${INSTALL_PREFIX}"
 
 make -j${NPROC}
 make install
