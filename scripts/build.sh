@@ -16,7 +16,8 @@ if test $(uname -s) = "Linux"; then
         zlib-devel tcl tcl-devel tk tk-devel \
         libffi-devel readline-devel \
         python3 python3-devel python3-pip \
-        pcre-devel pcre2-devel
+        pcre-devel pcre2-devel \
+        openssl-devel
 
     # Create cmake symlink if cmake3 exists
     if test -f /usr/bin/cmake3 && test ! -f /usr/bin/cmake; then
@@ -66,16 +67,14 @@ BUILD_DIR=${root}/build_deps
 mkdir -p ${BUILD_DIR}
 cd ${BUILD_DIR}
 
-# Build newer CMake
+# Build newer CMake (use pre-built binary to avoid bootstrap issues)
 CMAKE_VERSION="3.28.3"
 if ! test -f ${INSTALL_PREFIX}/bin/cmake; then
-    echo "=== Building CMake ${CMAKE_VERSION} ==="
-    wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}.tar.gz
-    tar xzf cmake-${CMAKE_VERSION}.tar.gz
-    cd cmake-${CMAKE_VERSION}
-    ./bootstrap --prefix=${INSTALL_PREFIX} --parallel=${NPROC}
-    make -j${NPROC}
-    make install
+    echo "=== Installing CMake ${CMAKE_VERSION} ==="
+    arch=$(uname -m)
+    wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-${arch}.sh
+    chmod +x cmake-${CMAKE_VERSION}-linux-${arch}.sh
+    ./cmake-${CMAKE_VERSION}-linux-${arch}.sh --skip-license --prefix=${INSTALL_PREFIX}
     cd ${BUILD_DIR}
 fi
 export PATH=${INSTALL_PREFIX}/bin:$PATH
