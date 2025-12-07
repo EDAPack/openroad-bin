@@ -215,8 +215,7 @@ cmake .. \
     -DCMAKE_BUILD_TYPE=Release \
     -DTCL_LIBRARY=/usr/lib64/libtcl.so \
     -DCMAKE_PREFIX_PATH="${INSTALL_PREFIX}" \
-    -DPython3_ROOT_DIR=/opt/python/cp312-cp312 \
-    -DPython3_EXECUTABLE=/opt/python/cp312-cp312/bin/python3
+    -DPython3_EXECUTABLE=/usr/bin/python3
 
 make -j${NPROC}
 make install
