@@ -57,7 +57,9 @@ jobs:
               uses: actions/upload-artifact@v4
               with:
                 name: "openroad-${{ matrix.image }}"
-                path: "release/openroad-${{ matrix.image }}-*.tar.gz"
+                path: |
+                  release/openroad-${{ matrix.image }}-*.tar.gz
+                  release/version.txt
                 if-no-files-found: error
                 retention-days: 7
 
@@ -69,19 +71,6 @@ jobs:
         permissions:
             contents: write
         steps:
-        - name: Create Release
-          id: create_release
-          uses: actions/create-release@v1
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          with:
-            tag_name: "${{ needs.version-check.outputs.rls_version }}"
-            release_name: "Release ${{ needs.version-check.outputs.rls_version }}"
-            body: |
-              Build of OpenROAD
-              Version: ${{ needs.version-check.outputs.rls_version }}
-            draft: false
-            prerelease: true
         - name: Download build artifacts
           uses: actions/download-artifact@v4
           with:
@@ -89,10 +78,31 @@ jobs:
             path: release
             merge-multiple: true
 
+        - name: Get version from build
+          id: get_version
+          run: |
+            rls_version=$(cat release/version.txt)
+            echo "rls_version=${rls_version}" >> ${GITHUB_OUTPUT}
+            echo "Release version: ${rls_version}"
+
+        - name: Create Release
+          id: create_release
+          uses: actions/create-release@v1
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          with:
+            tag_name: "${{ steps.get_version.outputs.rls_version }}"
+            release_name: "Release ${{ steps.get_version.outputs.rls_version }}"
+            body: |
+              Build of OpenROAD
+              Version: ${{ steps.get_version.outputs.rls_version }}
+            draft: false
+            prerelease: true
+
         - name: Upload assets to release
           uses: softprops/action-gh-release@v2
           with:
-            tag_name: "${{ needs.version-check.outputs.rls_version }}"
+            tag_name: "${{ steps.get_version.outputs.rls_version }}"
             files: |
               release/**/*.tar.gz
             fail_on_unmatched_files: true

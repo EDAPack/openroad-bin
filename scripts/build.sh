@@ -17,11 +17,6 @@ fi
 #********************************************************************
 #* Calculate version information
 #********************************************************************
-rls_version=${openroad_version}
-if test "x${BUILD_NUM}" != "x"; then
-    rls_version="${rls_version}.${BUILD_NUM}"
-fi
-
 if test -z "$image"; then
     image=linux
 fi
@@ -51,8 +46,24 @@ make install
 #********************************************************************
 cd ${root}
 echo "=== Cloning OpenROAD ${openroad_version} ==="
-git clone --recursive --depth=1 -b ${openroad_version} https://github.com/The-OpenROAD-Project/OpenROAD.git
+git clone --recursive -b ${openroad_version} https://github.com/The-OpenROAD-Project/OpenROAD.git
 cd OpenROAD
+
+#********************************************************************
+#* Get OpenROAD version from git describe
+#********************************************************************
+OPENROAD_GIT_VERSION=$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD)
+echo "OpenROAD git version: ${OPENROAD_GIT_VERSION}"
+
+# Update release version to use OpenROAD version
+rls_version=${OPENROAD_GIT_VERSION}
+if test "x${BUILD_NUM}" != "x"; then
+    rls_version="${rls_version}.${BUILD_NUM}"
+fi
+echo "Release version: ${rls_version}"
+
+# Write version info to file for workflow to read
+echo "${rls_version}" > ${root}/release/version.txt
 
 #********************************************************************
 #* Install dependencies using OpenROAD's installer
