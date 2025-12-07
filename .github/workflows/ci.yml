@@ -46,7 +46,7 @@ jobs:
                 image: ubuntu-22.04
                 openroad_version: ${{ needs.version-check.outputs.openroad_version }}
               run: |
-                sudo ./scripts/build.sh
+                sudo -E ./scripts/build.sh
             - name: upload artifact
               uses: actions/upload-artifact@v4
               with:
