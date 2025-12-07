@@ -26,7 +26,7 @@ jobs:
             cat ${GITHUB_OUTPUT}
 
     build-linux-x86_64:
-        runs-on: 'ubuntu-22.04'
+        runs-on: 'ubuntu-latest'
         needs: version-check
         steps:
             - uses: actions/checkout@v4
@@ -38,15 +38,22 @@ jobs:
               env:
                 GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                 BUILD_NUM: ${{ github.run_id }}
-                image: ubuntu-22.04
+                image: manylinux_2_34_x86_64
                 openroad_version: ${{ needs.version-check.outputs.openroad_version }}
-              run: |
-                sudo -E ./scripts/build.sh
+              run: >
+                docker run --rm
+                --volume "$(pwd):/io"
+                --env BUILD_NUM
+                --env openroad_version
+                --env image
+                --workdir /io
+                quay.io/pypa/manylinux_2_34_x86_64
+                /io/scripts/build.sh
             - name: upload artifact
               uses: actions/upload-artifact@v4
               with:
-                name: "openroad-ubuntu-22.04"
-                path: "release/openroad-ubuntu-22.04-*.tar.gz"
+                name: "openroad-manylinux_2_34_x86_64"
+                path: "release/openroad-manylinux_2_34_x86_64-*.tar.gz"
                 if-no-files-found: error
                 retention-days: 7
 
