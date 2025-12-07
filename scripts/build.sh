@@ -51,6 +51,21 @@ echo "=== Installing common dependencies ==="
 ./etc/DependencyInstaller.sh -common -prefix=${INSTALL_PREFIX}
 
 #********************************************************************
+#* Build and install Tcl from source
+#********************************************************************
+echo "=== Building Tcl from source ==="
+cd ${root}
+TCL_VERSION=8.6.16
+curl -L -o tcl${TCL_VERSION}-src.tar.gz "https://prdownloads.sourceforge.net/tcl/tcl${TCL_VERSION}-src.tar.gz"
+tar xzf tcl${TCL_VERSION}-src.tar.gz
+cd tcl${TCL_VERSION}/unix
+./configure --prefix=${INSTALL_PREFIX} --enable-shared
+make -j${NPROC}
+make install
+
+cd ${root}/OpenROAD
+
+#********************************************************************
 #* Build OpenROAD
 #********************************************************************
 echo "=== Building OpenROAD ==="
@@ -85,6 +100,7 @@ cat > bin/openroad.sh << 'EOF'
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export LD_LIBRARY_PATH="${SCRIPT_DIR}/../lib:${LD_LIBRARY_PATH}"
+export TCL_LIBRARY="${SCRIPT_DIR}/../lib/tcl8.6"
 exec "${SCRIPT_DIR}/openroad" "$@"
 EOF
 chmod +x bin/openroad.sh
