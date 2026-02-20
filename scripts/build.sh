@@ -114,6 +114,49 @@ exec "${SCRIPT_DIR}/openroad" "$@"
 EOF
 chmod +x bin/openroad.sh
 
+# Create sta.sh wrapper (mirrors openroad.sh; fixes missing rpath for sta)
+cat > bin/sta.sh << 'EOF'
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export LD_LIBRARY_PATH="${SCRIPT_DIR}/../lib:${LD_LIBRARY_PATH}"
+export TCL_LIBRARY="${SCRIPT_DIR}/../lib/tcl8.6"
+exec "${SCRIPT_DIR}/sta" "$@"
+EOF
+chmod +x bin/sta.sh
+
+#********************************************************************
+#* Cleanup: remove build-time / unused artefacts to reduce package size
+#* (see openroad-bin-cleanup-analysis.md for rationale)
+#********************************************************************
+echo "=== Cleaning up unnecessary files ==="
+
+# Build-system binaries
+for f in cmake cmake-gui ccmake cpack ctest bison yacc swig ccache-swig \
+          protoc protoc-26.1.0; do
+    rm -f bin/$f
+done
+
+# PCRE2 / LEMON / OR-Tools / misc utilities
+for f in pcre2-config pcre2grep pcre2test \
+          dimacs-solver dimacs-to-lgf fzn-cp-sat lemon-0.x-to-1.x.sh \
+          lgf-gen sat_runner scip solve sqlite3_analyzer vector_bin_packing; do
+    rm -f bin/$f
+done
+
+# Static archives and libtool archives in lib/
+find lib/ -maxdepth 1 \( -name '*.a' -o -name '*.la' \) -delete
+
+# pkg-config metadata (build-time only)
+rm -rf lib/pkgconfig
+
+# lib64/ is only referenced by the removed OR-Tools utilities;
+# openroad links to lib/libortools.so.9, so lib64/ is safe to remove
+rm -rf lib64
+
+echo "=== Cleanup complete ==="
+ls -lh bin/
+du -sh lib/ || true
+
 #********************************************************************
 #* Create release tarball
 #********************************************************************
