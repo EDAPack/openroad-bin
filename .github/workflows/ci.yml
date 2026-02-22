@@ -90,8 +90,13 @@ jobs:
                   esac
                 done
                 if [ ${#sky130_dirs[@]} -gt 0 ]; then
+                  mkdir -p /tmp/sky130_stage/sky130
+                  for d in "${sky130_dirs[@]}"; do
+                    cp -r "${platforms_dir}/${d}" /tmp/sky130_stage/sky130/
+                  done
                   tar czf release/openroad-pdk-sky130.tar.gz \
-                    -C "${platforms_dir}" "${sky130_dirs[@]}"
+                    -C /tmp/sky130_stage sky130
+                  rm -rf /tmp/sky130_stage
                   echo "Created: openroad-pdk-sky130.tar.gz (${sky130_dirs[*]})"
                 fi
                 ls -lh release/
