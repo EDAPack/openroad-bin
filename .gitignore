@@ -136,7 +136,7 @@ celerybeat.pid
 
 # Environments
 .env
-.envrc
+#.envrc
 .venv
 env/
 venv/
@@ -209,3 +209,6 @@ __marimo__/
 # Temporary build directories
 tmp_openroad/
 *.code-workspace
+
+packages/
+

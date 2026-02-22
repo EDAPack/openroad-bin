@@ -1,0 +1,14 @@
+package:
+  name: openroad-bin
+
+  dep-sets:
+  - name: default-dev
+    deps:
+    - name: OpenROAD-flow-scripts
+      url: https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts.git
+#      src: gh-rls
+#      source: true
+      version: 26Q1
+      depth: 1
+      anonymous: true
+      cache: true
