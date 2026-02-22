@@ -75,12 +75,25 @@ jobs:
             - name: Create PDK tarballs
               run: |
                 mkdir -p release
-                for pdk in packages/OpenROAD-flow-scripts/flow/platforms/*/; do
+                platforms_dir=packages/OpenROAD-flow-scripts/flow/platforms
+                sky130_dirs=()
+                for pdk in "${platforms_dir}"/*/; do
                   pdk_name=$(basename "${pdk}")
-                  tar czf release/openroad-pdk-${pdk_name}.tar.gz \
-                    -C packages/OpenROAD-flow-scripts/flow/platforms "${pdk_name}"
-                  echo "Created: openroad-pdk-${pdk_name}.tar.gz"
+                  case "${pdk_name}" in
+                    common) continue ;;
+                    sky130*) sky130_dirs+=("${pdk_name}") ;;
+                    *)
+                      tar czf release/openroad-pdk-${pdk_name}.tar.gz \
+                        -C "${platforms_dir}" "${pdk_name}"
+                      echo "Created: openroad-pdk-${pdk_name}.tar.gz"
+                      ;;
+                  esac
                 done
+                if [ ${#sky130_dirs[@]} -gt 0 ]; then
+                  tar czf release/openroad-pdk-sky130.tar.gz \
+                    -C "${platforms_dir}" "${sky130_dirs[@]}"
+                  echo "Created: openroad-pdk-sky130.tar.gz (${sky130_dirs[*]})"
+                fi
                 ls -lh release/
             - name: Upload PDK artifacts
               uses: actions/upload-artifact@v4
