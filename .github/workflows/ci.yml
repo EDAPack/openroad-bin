@@ -63,10 +63,38 @@ jobs:
                 if-no-files-found: error
                 retention-days: 7
 
+    build-pdks:
+        runs-on: 'ubuntu-latest'
+        needs: version-check
+        steps:
+            - uses: actions/checkout@v4
+            - name: Install ivpm
+              run: pip install ivpm
+            - name: Fetch OpenROAD flow scripts
+              run: ivpm update -a
+            - name: Create PDK tarballs
+              run: |
+                mkdir -p release
+                for pdk in packages/OpenROAD-flow-scripts/flow/platforms/*/; do
+                  pdk_name=$(basename "${pdk}")
+                  tar czf release/openroad-pdk-${pdk_name}.tar.gz \
+                    -C packages/OpenROAD-flow-scripts/flow/platforms "${pdk_name}"
+                  echo "Created: openroad-pdk-${pdk_name}.tar.gz"
+                done
+                ls -lh release/
+            - name: Upload PDK artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                name: openroad-pdks
+                path: release/openroad-pdk-*.tar.gz
+                if-no-files-found: error
+                retention-days: 7
+
     publish:
         runs-on: 'ubuntu-latest'
         needs: 
         - build-linux-x86_64
+        - build-pdks
         - version-check
         permissions:
             contents: write
