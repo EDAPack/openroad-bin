@@ -160,6 +160,8 @@ du -sh lib/ || true
 #********************************************************************
 #* Create release tarball
 #********************************************************************
+cp ${root}/export.envrc ${INSTALL_PREFIX}/export.envrc
+
 cd ${root}/release
 
 tar czf openroad-${rls_plat}-${rls_version}.tar.gz openroad
