@@ -158,6 +158,30 @@ ls -lh bin/
 du -sh lib/ || true
 
 #********************************************************************
+#* Generate release manifest
+#********************************************************************
+echo "=== Generating release manifest ==="
+
+cat > ${INSTALL_PREFIX}/openroad-manifest.json << EOF
+{
+  "components": {
+    "openroad": "$(cd ${root}/OpenROAD && git rev-parse HEAD)",
+    "openroad-flow-scripts": "$(cd ${root}/packages/OpenROAD-flow-scripts && git rev-parse HEAD)",
+    "tcl": "${TCL_VERSION}",
+    "build-script-checksum": "$(cat ${root}/scripts/build.sh ${root}/ivpm.yaml ${root}/.github/workflows/ci.yml | sha256sum | cut -d' ' -f1)"
+  },
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "release_tag": "${rls_version}"
+}
+EOF
+
+# Copy manifest to release directory for upload as separate asset
+cp ${INSTALL_PREFIX}/openroad-manifest.json ${root}/release/openroad-manifest.json
+
+echo "Manifest generated:"
+cat ${INSTALL_PREFIX}/openroad-manifest.json | sed 's/^/  /'
+
+#********************************************************************
 #* Create release tarball
 #********************************************************************
 cp ${root}/export.envrc ${INSTALL_PREFIX}/export.envrc
