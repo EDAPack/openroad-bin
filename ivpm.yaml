@@ -8,7 +8,7 @@ package:
       url: https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts.git
 #      src: gh-rls
 #      source: true
-      version: 26Q1
+      tag: 26Q1
       depth: 1
       anonymous: true
       cache: true

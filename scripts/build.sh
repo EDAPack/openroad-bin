@@ -78,7 +78,14 @@ echo "=== Installing common dependencies ==="
 #* Build OpenROAD
 #********************************************************************
 echo "=== Building OpenROAD ==="
-./etc/Build.sh -cmake="-DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DCMAKE_PREFIX_PATH=${INSTALL_PREFIX} -DTCL_LIBRARY=${INSTALL_PREFIX}/lib/libtcl8.6.so -DTCL_INCLUDE_PATH=${INSTALL_PREFIX}/include"
+# -cmake-build is required: upstream made Bazel the default build system, and
+# the manylinux builder has no bazelisk/bazel. Build.sh also tees all of its
+# output (including that missing-dependency error) into build/openroad_build.log
+# rather than the console, so the failure surfaced as a bare exit 1 in CI —
+# hence the explicit dump below.
+./etc/Build.sh -cmake-build \
+    -cmake="-DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DCMAKE_PREFIX_PATH=${INSTALL_PREFIX} -DTCL_LIBRARY=${INSTALL_PREFIX}/lib/libtcl8.6.so -DTCL_INCLUDE_PATH=${INSTALL_PREFIX}/include" \
+    || { echo "=== Build.sh failed; tail of build/openroad_build.log ==="; tail -n 200 build/openroad_build.log 2>/dev/null; exit 1; }
 
 echo "=== Installing OpenROAD ==="
 cd build
