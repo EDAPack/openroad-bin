@@ -32,9 +32,9 @@ if [ -z "$OPENROAD_SHA" ]; then
 fi
 echo "    OpenROAD: $OPENROAD_SHA"
 
-# OpenROAD-flow-scripts 26Q1 tag commit
+# OpenROAD-flow-scripts 26Q1 tag commit (^{} peels the annotated tag to its commit)
 echo "  Fetching OpenROAD-flow-scripts 26Q1 commit..."
-FLOW_SCRIPTS_SHA=$(git ls-remote --tags https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts.git refs/tags/26Q1 | cut -f1)
+FLOW_SCRIPTS_SHA=$(git ls-remote --tags https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts.git 'refs/tags/26Q1^{}' | cut -f1)
 if [ -z "$FLOW_SCRIPTS_SHA" ]; then
     echo -e "${RED}ERROR: Failed to fetch OpenROAD-flow-scripts 26Q1 commit${NC}"
     exit 1
@@ -61,7 +61,7 @@ LAST_MANIFEST="${TMPDIR}/openroad-manifest.json"
 if command -v gh &> /dev/null; then
     if gh release download --repo "$GITHUB_REPOSITORY" \
         --pattern "openroad-manifest.json" \
-        --dir "${TMPDIR}" 2>/dev/null; then
+        --dir "${TMPDIR}"; then
         MANIFEST_FOUND=true
         echo -e "${GREEN}✓ Found last release manifest${NC}"
         cat "${LAST_MANIFEST}" | jq '.' 2>/dev/null || cat "${LAST_MANIFEST}"
@@ -129,6 +129,7 @@ fi
 #* Output result
 #********************************************************************
 echo -e "\n========================================="
+echo "orfs_sha=${FLOW_SCRIPTS_SHA}" >> "${GITHUB_OUTPUT}"
 if [ "$HAS_CHANGES" = true ]; then
     echo -e "${GREEN}Result: CHANGES DETECTED - proceeding with build${NC}"
     echo "has_changes=true" >> "${GITHUB_OUTPUT}"

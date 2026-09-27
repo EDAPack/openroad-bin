@@ -173,7 +173,7 @@ cat > ${INSTALL_PREFIX}/openroad-manifest.json << EOF
 {
   "components": {
     "openroad": "$(cd ${root}/OpenROAD && git rev-parse HEAD)",
-    "openroad-flow-scripts": "$(cd ${root}/packages/OpenROAD-flow-scripts && git rev-parse HEAD)",
+    "openroad-flow-scripts": "${orfs_sha}",
     "tcl": "${TCL_VERSION}",
     "build-script-checksum": "$(cat ${root}/scripts/build.sh ${root}/ivpm.yaml ${root}/.github/workflows/ci.yml | sha256sum | cut -d' ' -f1)"
   },

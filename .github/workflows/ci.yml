@@ -62,6 +62,7 @@ jobs:
         runs-on: 'ubuntu-latest'
         outputs:
             has_changes: ${{ steps.check.outputs.has_changes }}
+            orfs_sha: ${{ steps.check.outputs.orfs_sha }}
         steps:
         - uses: actions/checkout@v4
         - name: Check for component changes
@@ -113,11 +114,13 @@ jobs:
                 BUILD_NUM: ${{ github.run_id }}
                 image: ${{ matrix.image }}
                 openroad_version: ${{ needs.version-check.outputs.openroad_version }}
+                orfs_sha: ${{ needs.check-for-changes.outputs.orfs_sha }}
               run: >
                 docker run --rm
                 --volume "$(pwd):/io"
                 --env BUILD_NUM
                 --env openroad_version
+                --env orfs_sha
                 --env image
                 --workdir /io
                 quay.io/pypa/${{ matrix.image }}
@@ -156,20 +159,19 @@ jobs:
                     common) continue ;;
                     sky130*) sky130_dirs+=("${pdk_name}") ;;
                     *)
-                      tar czf release/openroad-pdk-${pdk_name}.tar.gz \
+                      tar czf release/openroad-pdk-${pdk_name}.tar.gz --mode=u+w \
                         -C "${platforms_dir}" "${pdk_name}"
                       echo "Created: openroad-pdk-${pdk_name}.tar.gz"
                       ;;
                   esac
                 done
                 if [ ${#sky130_dirs[@]} -gt 0 ]; then
-                  mkdir -p /tmp/sky130_stage/sky130
-                  for d in "${sky130_dirs[@]}"; do
-                    cp -r "${platforms_dir}/${d}" /tmp/sky130_stage/sky130/
-                  done
-                  tar czf release/openroad-pdk-sky130.tar.gz \
-                    -C /tmp/sky130_stage sky130
-                  rm -rf /tmp/sky130_stage
+                  # Place sky130* platforms under a top-level sky130/ directory.
+                  # Done with --transform rather than a staging copy, since the
+                  # ivpm cache is read-only and the copy can't be removed.
+                  tar czf release/openroad-pdk-sky130.tar.gz --mode=u+w \
+                    --transform='s,^,sky130/,S' \
+                    -C "${platforms_dir}" "${sky130_dirs[@]}"
                   echo "Created: openroad-pdk-sky130.tar.gz (${sky130_dirs[*]})"
                 fi
                 ls -lh release/
@@ -245,7 +247,7 @@ jobs:
             body: |
               Build of OpenROAD
               Version: ${{ steps.get_version.outputs.rls_version }}
-            prerelease: true
+            prerelease: false
             files: |
               release/**/*.tar.gz
               release/openroad-manifest.json
