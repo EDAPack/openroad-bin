@@ -81,21 +81,30 @@ echo "=== Installing common dependencies ==="
 #* Build OpenROAD
 #********************************************************************
 echo "=== Building OpenROAD ==="
-# -cmake-build is required: upstream made Bazel the default build system, and
-# the manylinux builder has no bazelisk/bazel. Build.sh also tees all of its
-# output (including that missing-dependency error) into build/openroad_build.log
-# rather than the console, so the failure surfaced as a bare exit 1 in CI —
-# hence the explicit dump below.
-# -no-tests: upstream only builds tests with Bazel now, so the CMake test
-# targets rot (e.g. rsz's TestResizer losing an include path). We don't ship
-# them, so don't let them fail the release.
-./etc/Build.sh -cmake-build -no-tests \
-    -cmake="-DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DCMAKE_PREFIX_PATH=${INSTALL_PREFIX} -DTCL_LIBRARY=${INSTALL_PREFIX}/lib/libtcl8.6.so -DTCL_INCLUDE_PATH=${INSTALL_PREFIX}/include" \
-    || { echo "=== Build.sh failed; tail of build/openroad_build.log ==="; tail -n 200 build/openroad_build.log 2>/dev/null; exit 1; }
+# Upstream's CMake build is deprecated (removed Nov. 1, 2026) and its test
+# targets have rotted: with tests on, rsz's TestResizer can't find
+# MoveCandidate.hh; with -no-tests, stt's tests still reference the missing
+# build_and_test target. So don't use Build.sh's CMake path, which builds
+# everything. Configure as it does (gcc, plus the dependency prefixes that
+# DependencyInstaller saved), then build and install only what we ship.
+deps_prefixes=()
+if test -f etc/openroad_deps_prefixes.txt; then
+    while IFS= read -r arg; do
+        test -n "$arg" && deps_prefixes+=("$arg")
+    done < <(xargs printf '%s\n' < etc/openroad_deps_prefixes.txt)
+fi
+CC=gcc CXX=g++ cmake \
+    -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
+    -DCMAKE_PREFIX_PATH=${INSTALL_PREFIX} \
+    -DTCL_LIBRARY=${INSTALL_PREFIX}/lib/libtcl8.6.so \
+    -DTCL_INCLUDE_PATH=${INSTALL_PREFIX}/include \
+    "${deps_prefixes[@]}" \
+    -B build .
+cmake --build build -j ${NPROC} --target openroad sta
 
 echo "=== Installing OpenROAD ==="
-cd build
-make install
+# cmake --install, unlike `make install`, doesn't first build the `all` target
+cmake --install build
 
 #********************************************************************
 #* Copy runtime dependencies
