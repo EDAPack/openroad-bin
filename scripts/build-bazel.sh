@@ -115,7 +115,8 @@ bin/openroad -version
 bin/sta -version || true
 
 #********************************************************************
-#* Manifest and tarball (same layout as the CMake build)
+#* Manifest (same layout as the CMake build); package-bazel.sh
+#* bundles the runtime libraries and creates the tarball
 #********************************************************************
 cat > ${INSTALL_PREFIX}/openroad-manifest.json << EOF
 {
@@ -131,9 +132,5 @@ EOF
 cp ${INSTALL_PREFIX}/openroad-manifest.json ${root}/release/openroad-manifest.json
 cp ${root}/export.envrc ${INSTALL_PREFIX}/export.envrc
 
-cd ${root}/release
-tar czf openroad-${rls_plat}-${rls_version}.tar.gz openroad
-metric "Tarball size" "$(du -h openroad-${rls_plat}-${rls_version}.tar.gz | cut -f1)"
-
 cat ${metrics}
-echo "Build complete: openroad-${rls_plat}-${rls_version}.tar.gz"
+echo "Build complete; package with scripts/package-bazel.sh"

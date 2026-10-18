@@ -40,6 +40,16 @@ jobs:
                 image: linux-bazel-x86_64
                 openroad_version: ${{ inputs.openroad_version || 'master' }}
               run: ./scripts/build-bazel.sh
+            - name: package
+              env:
+                image: linux-bazel-x86_64
+              run: >
+                docker run --rm
+                --volume "$(pwd):/io"
+                --env image
+                --workdir /io
+                quay.io/pypa/manylinux_2_28_x86_64
+                /io/scripts/package-bazel.sh
             - name: report metrics
               if: always()
               run: cat release/metrics.md >> ${GITHUB_STEP_SUMMARY} || true
