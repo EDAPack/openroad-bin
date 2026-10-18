@@ -68,11 +68,14 @@ echo "${rls_version}" > ${root}/release/version.txt
 #********************************************************************
 #* Install dependencies using OpenROAD's installer
 #********************************************************************
+# -cmake is required: upstream's installer now defaults to Bazel-only
+# dependencies (bazelisk), so without it the CMake build's tools and libraries
+# (flex, bison, swig, or-tools, ...) are never installed.
 echo "=== Installing base dependencies ==="
-./etc/DependencyInstaller.sh -base
+./etc/DependencyInstaller.sh -cmake -base
 
 echo "=== Installing common dependencies ==="
-./etc/DependencyInstaller.sh -common -prefix=${INSTALL_PREFIX}
+./etc/DependencyInstaller.sh -cmake -common -prefix=${INSTALL_PREFIX}
 
 #********************************************************************
 #* Build OpenROAD
