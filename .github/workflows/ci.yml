@@ -1,6 +1,10 @@
 name: CI
 on:
   push:
+    # The Bazel prototype has its own workflow (bazel-prototype.yml);
+    # don't spend a 2h CMake build on every push to that branch.
+    branches-ignore:
+    - bazel-prototype
   workflow_dispatch:
   schedule:
     # Run weekly on Sunday at midnight UTC

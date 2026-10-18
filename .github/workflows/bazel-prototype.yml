@@ -1,0 +1,91 @@
+name: Bazel prototype
+# PROTOTYPE for the CMake -> Bazel migration (upstream drops CMake on
+# Nov. 1, 2026). Builds and smoke-tests only; never publishes.
+on:
+  push:
+    branches:
+    - bazel-prototype
+  workflow_dispatch:
+    inputs:
+      openroad_version:
+        description: 'OpenROAD branch or tag to build'
+        default: 'master'
+
+jobs:
+    build-bazel:
+        # Pinned rather than ubuntu-latest: that label moves to Ubuntu 26 on
+        # Oct. 19, 2026, and upstream's installer has a libxml2 workaround there.
+        runs-on: 'ubuntu-24.04'
+        timeout-minutes: 360
+        steps:
+            - uses: actions/checkout@v4
+            - name: free disk space
+              run: |
+                df -h /
+                sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                  /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+                sudo docker image prune --all --force || true
+                df -h /
+            - name: restore bazel caches
+              uses: actions/cache/restore@v4
+              with:
+                path: |
+                  ~/.cache/bazel-disk-cache
+                  ~/.cache/bazel-repo-cache
+                key: bazel-${{ runner.os }}-${{ github.run_id }}
+                restore-keys: bazel-${{ runner.os }}-
+            - name: build
+              env:
+                BUILD_NUM: ${{ github.run_id }}
+                image: linux-bazel-x86_64
+                openroad_version: ${{ inputs.openroad_version || 'master' }}
+              run: ./scripts/build-bazel.sh
+            - name: report metrics
+              if: always()
+              run: cat release/metrics.md >> ${GITHUB_STEP_SUMMARY} || true
+            - name: save bazel caches
+              if: always()
+              uses: actions/cache/save@v4
+              with:
+                path: |
+                  ~/.cache/bazel-disk-cache
+                  ~/.cache/bazel-repo-cache
+                key: bazel-${{ runner.os }}-${{ github.run_id }}
+            - name: upload artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                name: openroad-linux-bazel-x86_64
+                path: |
+                  release/openroad-linux-bazel-x86_64-*.tar.gz
+                  release/version.txt
+                  release/openroad-manifest.json
+                  release/metrics.md
+                  release/bazel-build.log
+                retention-days: 7
+
+    smoke-test:
+        needs: build-bazel
+        runs-on: 'ubuntu-24.04'
+        strategy:
+          fail-fast: false
+          matrix:
+            # Oldest first: glibc 2.28 is hermetic-llvm's default floor.
+            container:
+            - rockylinux:8                          # glibc 2.28
+            - quay.io/pypa/manylinux_2_28_x86_64    # glibc 2.28
+            - ubuntu:20.04                          # glibc 2.31
+            - ubuntu:22.04                          # glibc 2.35
+            - ubuntu:24.04                          # glibc 2.39
+        container: ${{ matrix.container }}
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/download-artifact@v4
+              with:
+                name: openroad-linux-bazel-x86_64
+                path: release
+            - name: smoke test
+              run: |
+                # minimal images may lack tar/gzip
+                command -v tar >/dev/null || { dnf -y install tar gzip || { apt-get update && apt-get -y install tar gzip; }; }
+                bash scripts/smoke-test.sh release/openroad-linux-bazel-x86_64-*.tar.gz
