@@ -93,14 +93,23 @@ jobs:
             cat ${GITHUB_OUTPUT}
 
     build-linux-x86_64:
+        # Upstream removed OpenROAD's CMake build on Nov. 1, 2026, so this
+        # builds with Bazel directly on the runner: Bazel's hermetic
+        # clang/libc++ toolchain links against glibc 2.28 stubs, so
+        # portability comes from the toolchain, not a manylinux build image.
+        # package.sh then bundles the GUI's system libraries from an EL8
+        # (manylinux_2_28) image, keeping the whole tarball at glibc 2.28.
         if: needs.check-for-changes.outputs.has_changes == 'true' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        runs-on: 'ubuntu-latest'
+        # Pinned rather than ubuntu-latest: that label moves to Ubuntu 26 on
+        # Oct. 19, 2026, and upstream's installer has a libxml2 workaround there.
+        runs-on: 'ubuntu-24.04'
+        timeout-minutes: 360
         needs: 
         - version-check
         - check-for-changes
         strategy:
           matrix:
-            image: [manylinux_2_34_x86_64]
+            image: [manylinux_2_28_x86_64]
         steps:
             - uses: actions/checkout@v4
             - name: print
@@ -108,23 +117,56 @@ jobs:
                 echo "image: ${{ matrix.image }}"
                 echo "openroad_version: ${{ needs.version-check.outputs.openroad_version }}"
                 echo "rls_version: ${{ needs.version-check.outputs.rls_version }}"
+            - name: free disk space
+              run: |
+                df -h /
+                sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                  /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+                sudo docker image prune --all --force || true
+                df -h /
+            - name: restore bazel caches
+              uses: actions/cache/restore@v4
+              with:
+                path: |
+                  ~/.cache/bazel-disk-cache
+                  ~/.cache/bazel-repo-cache
+                key: bazel-${{ runner.os }}-${{ github.run_id }}
+                restore-keys: bazel-${{ runner.os }}-
             - name: build
               env:
-                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                 BUILD_NUM: ${{ github.run_id }}
                 image: ${{ matrix.image }}
                 openroad_version: ${{ needs.version-check.outputs.openroad_version }}
                 orfs_sha: ${{ needs.check-for-changes.outputs.orfs_sha }}
+              run: ./scripts/build.sh
+            - name: package
+              env:
+                image: ${{ matrix.image }}
               run: >
                 docker run --rm
                 --volume "$(pwd):/io"
-                --env BUILD_NUM
-                --env openroad_version
-                --env orfs_sha
                 --env image
                 --workdir /io
                 quay.io/pypa/${{ matrix.image }}
-                /io/scripts/build.sh
+                /io/scripts/package.sh
+            - name: report metrics
+              if: always()
+              run: cat release/metrics.md >> ${GITHUB_STEP_SUMMARY} || true
+            - name: save bazel caches
+              if: always()
+              uses: actions/cache/save@v4
+              with:
+                path: |
+                  ~/.cache/bazel-disk-cache
+                  ~/.cache/bazel-repo-cache
+                key: bazel-${{ runner.os }}-${{ github.run_id }}
+            - name: upload build log
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                name: "bazel-build-log-${{ matrix.image }}"
+                path: release/bazel-build.log
+                retention-days: 7
             - name: upload artifact
               uses: actions/upload-artifact@v4
               with:
@@ -135,6 +177,33 @@ jobs:
                   release/openroad-manifest.json
                 if-no-files-found: error
                 retention-days: 7
+
+    smoke-test:
+        # Run the packaged binaries on old and new distros before publishing.
+        needs: build-linux-x86_64
+        runs-on: 'ubuntu-24.04'
+        strategy:
+          fail-fast: false
+          matrix:
+            # Oldest first: glibc 2.28 is hermetic-llvm's default floor.
+            container:
+            - rockylinux:8                          # glibc 2.28
+            - quay.io/pypa/manylinux_2_28_x86_64    # glibc 2.28
+            - ubuntu:20.04                          # glibc 2.31
+            - ubuntu:22.04                          # glibc 2.35
+            - ubuntu:24.04                          # glibc 2.39
+        container: ${{ matrix.container }}
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/download-artifact@v4
+              with:
+                name: openroad-manylinux_2_28_x86_64
+                path: release
+            - name: smoke test
+              run: |
+                # minimal images may lack tar/gzip
+                command -v tar >/dev/null || { dnf -y install tar gzip || { apt-get update && apt-get -y install tar gzip; }; }
+                bash scripts/smoke-test.sh release/openroad-manylinux_2_28_x86_64-*.tar.gz
 
     build-pdks:
         if: needs.check-for-changes.outputs.has_changes == 'true' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -219,6 +288,7 @@ jobs:
         runs-on: 'ubuntu-latest'
         needs: 
         - build-linux-x86_64
+        - smoke-test
         - build-pdks
         - version-check
         - gate

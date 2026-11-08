@@ -43,11 +43,11 @@ echo "    OpenROAD-flow-scripts: $FLOW_SCRIPTS_SHA"
 
 # Build script checksum
 echo "  Calculating build script checksum..."
-SCRIPT_CHECKSUM=$(cat scripts/build.sh ivpm.yaml .github/workflows/ci.yml | sha256sum | cut -d' ' -f1)
+SCRIPT_CHECKSUM=$(cat scripts/build.sh scripts/package.sh ivpm.yaml .github/workflows/ci.yml | sha256sum | cut -d' ' -f1)
 echo "    Build scripts: $SCRIPT_CHECKSUM"
 
-TCL_VERSION="8.6.16"
-echo "    Tcl: $TCL_VERSION"
+# Tcl is no longer tracked here: the Bazel build takes it from OpenROAD's
+# MODULE.bazel, so it changes only with the OpenROAD commit.
 
 #********************************************************************
 #* Try to fetch last release manifest
@@ -86,7 +86,6 @@ else
     # Extract last versions from manifest
     LAST_OPENROAD=$(jq -r '.components.openroad' "${LAST_MANIFEST}" 2>/dev/null || echo "")
     LAST_FLOW_SCRIPTS=$(jq -r '.components."openroad-flow-scripts"' "${LAST_MANIFEST}" 2>/dev/null || echo "")
-    LAST_TCL=$(jq -r '.components.tcl' "${LAST_MANIFEST}" 2>/dev/null || echo "")
     LAST_SCRIPT_CHECKSUM=$(jq -r '.components."build-script-checksum"' "${LAST_MANIFEST}" 2>/dev/null || echo "")
 
     if [ -z "$LAST_OPENROAD" ]; then
@@ -102,10 +101,6 @@ else
         
         if [ "$FLOW_SCRIPTS_SHA" != "$LAST_FLOW_SCRIPTS" ]; then
             CHANGES+=("OpenROAD-flow-scripts: $LAST_FLOW_SCRIPTS → $FLOW_SCRIPTS_SHA")
-        fi
-        
-        if [ "$TCL_VERSION" != "$LAST_TCL" ]; then
-            CHANGES+=("Tcl: $LAST_TCL → $TCL_VERSION")
         fi
         
         if [ "$SCRIPT_CHECKSUM" != "$LAST_SCRIPT_CHECKSUM" ]; then

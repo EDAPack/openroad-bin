@@ -1,45 +1,41 @@
 #!/bin/bash -x
+#********************************************************************
+#* Build OpenROAD and OpenSTA with Bazel.
+#*
+#* Upstream removed its CMake build on Nov. 1, 2026
+#* (DependencyInstaller.sh -cmake now exits with an error). This runs
+#* directly on an Ubuntu runner (no manylinux container): Bazel brings
+#* its own hermetic clang/libc++ toolchain and links against glibc
+#* stubs, so portability comes from the toolchain rather than the
+#* build image. Besides producing a tarball, it records measurements
+#* (time, disk, cache hits, glibc floor) in release/metrics.md.
+#********************************************************************
 
 set -e
 
 root=$(pwd)
 NPROC=$(nproc)
+metrics=${root}/release/metrics.md
 
-#********************************************************************
-#* Validate environment variables
-#********************************************************************
 if test -z "$openroad_version"; then
   echo "openroad_version not set"
-  env
   exit 1
 fi
-
-#********************************************************************
-#* Calculate version information
-#********************************************************************
 if test -z "$image"; then
-    image=linux
+    image=manylinux_2_28_x86_64
 fi
 rls_plat=${image}
 
-#********************************************************************
-#* Set install prefix
-#********************************************************************
 INSTALL_PREFIX=${root}/release/openroad
 mkdir -p ${INSTALL_PREFIX}
+: > ${metrics}
 
-#********************************************************************
-#* Build and install Tcl from source FIRST
-#********************************************************************
-echo "=== Building Tcl from source ==="
-cd ${root}
-TCL_VERSION=8.6.16
-curl -L -o tcl${TCL_VERSION}-src.tar.gz "https://prdownloads.sourceforge.net/tcl/tcl${TCL_VERSION}-src.tar.gz"
-tar xzf tcl${TCL_VERSION}-src.tar.gz
-cd tcl${TCL_VERSION}/unix
-./configure --prefix=${INSTALL_PREFIX} --enable-shared
-make -j${NPROC}
-make install
+metric() {
+    echo "| $1 | $2 |" >> ${metrics}
+}
+echo "| Metric | Value |" >> ${metrics}
+echo "|---|---|" >> ${metrics}
+metric "Disk free at start" "$(df -h --output=avail ${root} | tail -1)"
 
 #********************************************************************
 #* Clone OpenROAD
@@ -49,169 +45,94 @@ echo "=== Cloning OpenROAD ${openroad_version} ==="
 git clone --recursive -b ${openroad_version} https://github.com/The-OpenROAD-Project/OpenROAD.git
 cd OpenROAD
 
-#********************************************************************
-#* Get OpenROAD version from git describe
-#********************************************************************
 OPENROAD_GIT_VERSION=$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD)
-echo "OpenROAD git version: ${OPENROAD_GIT_VERSION}"
-
-# Update release version to use OpenROAD version
 rls_version=${OPENROAD_GIT_VERSION}
 if test "x${BUILD_NUM}" != "x"; then
     rls_version="${rls_version}.${BUILD_NUM}"
 fi
 echo "Release version: ${rls_version}"
-
-# Write version info to file for workflow to read
 echo "${rls_version}" > ${root}/release/version.txt
+metric "OpenROAD version" "${OPENROAD_GIT_VERSION}"
 
 #********************************************************************
-#* Install dependencies using OpenROAD's installer
+#* Install dependencies: system libraries (sudo) and bazelisk
 #********************************************************************
-# -cmake is required: upstream's installer now defaults to Bazel-only
-# dependencies (bazelisk), so without it the CMake build's tools and libraries
-# (flex, bison, swig, or-tools, ...) are never installed.
-echo "=== Installing base dependencies ==="
-./etc/DependencyInstaller.sh -cmake -base
-
-echo "=== Installing common dependencies ==="
-./etc/DependencyInstaller.sh -cmake -common -prefix=${INSTALL_PREFIX}
+echo "=== Installing Bazel dependencies ==="
+sudo ./etc/DependencyInstaller.sh -bazel -base
+./etc/DependencyInstaller.sh -bazel -common -prefix=${HOME}/.local
+export PATH=${HOME}/.local/bin:${PATH}
+bazelisk version
 
 #********************************************************************
-#* Build OpenROAD
+#* Build OpenROAD and OpenSTA
+#*
+#* --config=release --//:platform=gui matches upstream's Build.sh, so
+#* compile actions share keys with upstream CI and can be served from
+#* its read-only remote cache (bazel.precisioninno.com, set in .bazelrc).
 #********************************************************************
 echo "=== Building OpenROAD ==="
-# Upstream's CMake build is deprecated (removed Nov. 1, 2026) and its test
-# targets have rotted: with tests on, rsz's TestResizer can't find
-# MoveCandidate.hh; with -no-tests, stt's tests still reference the missing
-# build_and_test target. So don't use Build.sh's CMake path, which builds
-# everything. Configure as it does (gcc, plus the dependency prefixes that
-# DependencyInstaller saved), then build and install only what we ship.
-deps_prefixes=()
-if test -f etc/openroad_deps_prefixes.txt; then
-    while IFS= read -r arg; do
-        test -n "$arg" && deps_prefixes+=("$arg")
-    done < <(xargs printf '%s\n' < etc/openroad_deps_prefixes.txt)
+bazel_args=(
+    "--jobs=${NPROC}"
+    "--config=release"
+    "--//:platform=gui"
+    "--disk_cache=${HOME}/.cache/bazel-disk-cache"
+    "--repository_cache=${HOME}/.cache/bazel-repo-cache"
+)
+start=${SECONDS}
+bazelisk build "${bazel_args[@]}" //:openroad //src/sta:opensta 2>&1 | tee ${root}/release/bazel-build.log
+build_rc=${PIPESTATUS[0]}
+metric "Bazel build time" "$(( (SECONDS - start) / 60 ))m $(( (SECONDS - start) % 60 ))s"
+# e.g. "INFO: 12345 processes: 11000 remote cache hit, 1300 linux-sandbox, ..."
+metric "Bazel processes" "$(grep -E '^INFO: [0-9]+ processes' ${root}/release/bazel-build.log | tail -1 | sed 's/^INFO: //')"
+metric "Disk free after build" "$(df -h --output=avail ${root} | tail -1)"
+metric "Disk cache size" "$(du -sh ${HOME}/.cache/bazel-disk-cache 2>/dev/null | cut -f1)"
+metric "Repository cache size" "$(du -sh ${HOME}/.cache/bazel-repo-cache 2>/dev/null | cut -f1)"
+metric "Output base size" "$(du -sh $(bazelisk info output_base 2>/dev/null) 2>/dev/null | cut -f1)"
+if test ${build_rc} -ne 0; then
+    echo "=== Bazel build failed (rc=${build_rc}) ==="
+    exit ${build_rc}
 fi
-CC=gcc CXX=g++ cmake \
-    -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
-    -DCMAKE_PREFIX_PATH=${INSTALL_PREFIX} \
-    -DTCL_LIBRARY=${INSTALL_PREFIX}/lib/libtcl8.6.so \
-    -DTCL_INCLUDE_PATH=${INSTALL_PREFIX}/include \
-    "${deps_prefixes[@]}" \
-    -B build .
-cmake --build build -j ${NPROC} --target openroad sta
 
+#********************************************************************
+#* Install
+#********************************************************************
 echo "=== Installing OpenROAD ==="
-# cmake --install, unlike `make install`, doesn't first build the `all` target
-cmake --install build
+bazelisk run "${bazel_args[@]}" //:install -- ${INSTALL_PREFIX}
+cp -L bazel-bin/src/sta/opensta ${INSTALL_PREFIX}/bin/sta
+chmod u+w ${INSTALL_PREFIX}/bin/*
 
 #********************************************************************
-#* Copy runtime dependencies
+#* Inspect the binaries: dynamic deps and the newest glibc symbol
+#* they require (this is the effective portability floor).
 #********************************************************************
-echo "=== Copying runtime dependencies ==="
 cd ${INSTALL_PREFIX}
-
-# Copy required shared libraries
-mkdir -p lib
-for lib in $(ldd bin/openroad | grep "=> /" | awk '{print $3}'); do
-    # Skip system libraries that are commonly available
-    case $(basename $lib) in
-        libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|ld-linux*|linux-vdso*)
-            continue
-            ;;
-        *)
-            cp -L $lib lib/ 2>/dev/null || true
-            ;;
-    esac
+for b in openroad sta; do
+    glibc=$(objdump -T bin/$b | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+    metric "${b}: newest glibc symbol" "${glibc}"
+    metric "${b}: size" "$(du -h bin/$b | cut -f1)"
+    metric "${b}: NEEDED" "$(objdump -p bin/$b | awk '/NEEDED/{print $2}' | tr '\n' ' ')"
 done
-
-# Create wrapper script
-cat > bin/openroad.sh << 'EOF'
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export LD_LIBRARY_PATH="${SCRIPT_DIR}/../lib:${LD_LIBRARY_PATH}"
-export TCL_LIBRARY="${SCRIPT_DIR}/../lib/tcl8.6"
-exec "${SCRIPT_DIR}/openroad" "$@"
-EOF
-chmod +x bin/openroad.sh
-
-# Create sta.sh wrapper (mirrors openroad.sh; fixes missing rpath for sta)
-cat > bin/sta.sh << 'EOF'
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export LD_LIBRARY_PATH="${SCRIPT_DIR}/../lib:${LD_LIBRARY_PATH}"
-export TCL_LIBRARY="${SCRIPT_DIR}/../lib/tcl8.6"
-exec "${SCRIPT_DIR}/sta" "$@"
-EOF
-chmod +x bin/sta.sh
+bin/openroad -version
+bin/sta -version || true
 
 #********************************************************************
-#* Cleanup: remove build-time / unused artefacts to reduce package size
-#* (see openroad-bin-cleanup-analysis.md for rationale)
+#* Manifest; package.sh
+#* bundles the runtime libraries and creates the tarball
 #********************************************************************
-echo "=== Cleaning up unnecessary files ==="
-
-# Build-system binaries
-for f in cmake cmake-gui ccmake cpack ctest bison yacc swig ccache-swig \
-          protoc protoc-26.1.0; do
-    rm -f bin/$f
-done
-
-# PCRE2 / LEMON / OR-Tools / misc utilities
-for f in pcre2-config pcre2grep pcre2test \
-          dimacs-solver dimacs-to-lgf fzn-cp-sat lemon-0.x-to-1.x.sh \
-          lgf-gen sat_runner scip solve sqlite3_analyzer vector_bin_packing; do
-    rm -f bin/$f
-done
-
-# Static archives and libtool archives in lib/
-find lib/ -maxdepth 1 \( -name '*.a' -o -name '*.la' \) -delete
-
-# pkg-config metadata (build-time only)
-rm -rf lib/pkgconfig
-
-# lib64/ is only referenced by the removed OR-Tools utilities;
-# openroad links to lib/libortools.so.9, so lib64/ is safe to remove
-rm -rf lib64
-
-echo "=== Cleanup complete ==="
-ls -lh bin/
-du -sh lib/ || true
-
-#********************************************************************
-#* Generate release manifest
-#********************************************************************
-echo "=== Generating release manifest ==="
-
 cat > ${INSTALL_PREFIX}/openroad-manifest.json << EOF
 {
   "components": {
     "openroad": "$(cd ${root}/OpenROAD && git rev-parse HEAD)",
     "openroad-flow-scripts": "${orfs_sha}",
-    "tcl": "${TCL_VERSION}",
-    "build-script-checksum": "$(cat ${root}/scripts/build.sh ${root}/ivpm.yaml ${root}/.github/workflows/ci.yml | sha256sum | cut -d' ' -f1)"
+    "build-system": "bazel",
+    "build-script-checksum": "$(cat ${root}/scripts/build.sh ${root}/scripts/package.sh ${root}/ivpm.yaml ${root}/.github/workflows/ci.yml | sha256sum | cut -d' ' -f1)"
   },
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "release_tag": "${rls_version}"
 }
 EOF
-
-# Copy manifest to release directory for upload as separate asset
 cp ${INSTALL_PREFIX}/openroad-manifest.json ${root}/release/openroad-manifest.json
-
-echo "Manifest generated:"
-cat ${INSTALL_PREFIX}/openroad-manifest.json | sed 's/^/  /'
-
-#********************************************************************
-#* Create release tarball
-#********************************************************************
 cp ${root}/export.envrc ${INSTALL_PREFIX}/export.envrc
 
-cd ${root}/release
-
-tar czf openroad-${rls_plat}-${rls_version}.tar.gz openroad
-if test $? -ne 0; then exit 1; fi
-
-echo "Build complete: openroad-${rls_plat}-${rls_version}.tar.gz"
-ls -la
+cat ${metrics}
+echo "Build complete; package with scripts/package.sh"
